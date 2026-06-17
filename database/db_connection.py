@@ -64,7 +64,7 @@ class DB_connection:
         cursor.execute(sql, values)
         self.conn.commit()
         last_id = cursor.lastrowid
-        count_rows = cursor.rowcount
+        count_rows = cursor.rowcount > 0
         cursor.close()
         self.conn.close()
         return last_id, count_rows
@@ -90,4 +90,7 @@ class DB_connection:
         return data
 
 
-connection = DB_connection("127.0.0.1", "root", "1234", "Intelligence_db", 3306)
+try:
+    connection = DB_connection("127.0.0.1", "root", "1234", "Intelligence_db", 3306)
+except mysql.connector.errors as e:
+    print(f"Error: {e}")
