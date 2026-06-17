@@ -4,8 +4,8 @@ from typing import Literal
 
 
 class CreateAgent(BaseModel):
-    name: str = Field(max_length=50)
-    specialty: str = Field(max_length=50)
+    name: str = Field(..., max_length=50)
+    specialty: str = Field(..., max_length=50)
     agent_rank: str = Literal["Junior", "Senior", "Commander"]
 
 
