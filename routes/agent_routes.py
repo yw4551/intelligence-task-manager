@@ -1,12 +1,12 @@
 from fastapi import APIRouter
-from database.agent_db import agent
+from database.agent_db import agent, CreateAgent
 
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
 @router.post("", status_code=201)
-def create_new_agent(data: dict) -> dict:
+def create_new_agent(data: CreateAgent) -> dict:
     return agent.create_agent(data)
 
 
@@ -16,12 +16,12 @@ def get_all_agents_list() -> list[dict]:
 
 
 @router.get("/{id}")
-def get_agent_dict_by_id(id: int) -> list[dict]:
+def get_agent_dict_by_id(id: int) -> dict:
     return agent.get_agent_by_id(id)
 
 
 @router.put("/{id}")
-def update_agent(id: int, data: dict) -> dict:
+def update_agent(id: int, data: CreateAgent) -> dict:
     return agent.update_agent(id, data)
 
 

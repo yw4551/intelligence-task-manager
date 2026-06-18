@@ -18,8 +18,8 @@ class AgentDB:
 
     def create_agent(self, data: CreateAgent):
         try:
-            sql = "INSERT INTO agents (name, specialty, agent_rank) VALUES (%s, %s, %s, %s)"
-            values = (data["name"], data["specialty"], data["agent_rank"])
+            sql = "INSERT INTO agents (name, specialty, agent_rank) VALUES (%s, %s, %s)"
+            values = (data.name, data.specialty, data.agent_rank)
             last_id, _ = self.connection.connect_to_db(sql, values)
             return self.get_agent_by_id(last_id)
         except ValidationError as e:
@@ -66,6 +66,10 @@ class AgentDB:
 
         if not isinstance(id, int):
             raise HTTPException(status_code=422, detail="Invalid ID.")
+        
+        agent = self.get_agent_by_id(id)
+        if agent["is_active"] == False:
+            raise HTTPException(status_code=400, detail=f"Agent ID {id} is not active already.")
 
         _, count_rows = self.connection.connect_to_db(sql, values)
 
@@ -106,18 +110,21 @@ class AgentDB:
         if not data:
             raise HTTPException(status_code=404, detail=f"Agent ID {id} not found.")
 
-        return {
-            "Completed": data["completed_missions"],
-            "failed": data["failed_missions"],
-            "total": data["completed_missions"] + data["failed_missions"],
-            "success_rate": (data["failed_missions"] / data["completed_missions"])
-            * 100,
-        }
+        try:
+            return {
+                "Completed": data["completed_missions"],
+                "failed": data["failed_missions"],
+                "total": data["completed_missions"] + data["failed_missions"],
+                "success_rate": (data["failed_missions"] / data["completed_missions"])
+                * 100,
+            }
+        except ZeroDivisionError:
+            raise HTTPException(status_code=400, detail=f"Agent ID {id} cant get the success rate.")
 
     def count_active_agents(self):
-        sql = "SELECT * FROM agents WHERE is_active = %s"
+        sql = "SELECT COUNT(*) FROM agents WHERE is_active = %s"
         values = (True, )
-        data = self.connection.fetch_all(sql, values)
+        data = self.connection.fetch_one(sql, values)
         return data
 
 

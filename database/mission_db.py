@@ -34,12 +34,12 @@ class MissionDB:
         try:
             sql = "INSERT INTO missions (title, description, location, difficulty, importance, risk_level) VALUES (%s, %s, %s, %s, %s, %s)"
             values = (
-                data["title"],
-                data["description"],
-                data["location"],
-                data["difficulty"],
-                data["importance"],
-                self.get_risk_level(data["difficulty"], data["importance"])
+                data.title,
+                data.description,
+                data.location,
+                data.difficulty,
+                data.importance,
+                self.get_risk_level(data.difficulty, data.importance)
             )
 
             last_id, _ = self.connection.connect_to_db(sql, values)
@@ -57,11 +57,15 @@ class MissionDB:
     def get_mission_by_id(self, id: int) -> list[dict]:
         sql = "SELECT * FROM missions WHERE id = %s"
         values = (id,)
+
+        if not isinstance(id, int):
+            raise HTTPException(status_code=422, detail="Invalid ID.")
+
         data = self.connection.fetch_one(sql, values)
 
         if not data:
             raise HTTPException(status_code=404, detail=f"Mission {id} not found.")
-        
+
         return data
 
     def assign_mission(self, m_id: int, a_id: int) -> dict:
@@ -70,14 +74,14 @@ class MissionDB:
 
         agent_dict = agent.get_agent_by_id(a_id)
         if not agent_dict["is_active"]:
-            raise ValueError(f"Agent ID {a_id} is not active.")
+            raise HTTPException(status_code=400, detail=f"Agent ID {a_id} is not active.")
 
         if self.get_open_missions_by_agent(a_id) == 3:
-            raise ValueError(f"Agent ID {a_id} has too many missions.")
+            raise HTTPException(status_code=400, detail=f"Agent ID {a_id} has too many missions.")
 
         mission_dict = self.get_mission_by_id(m_id)
         if mission_dict["risk_level"] == "CRITICAL" and agent_dict["agent_rank"] != "Commander":
-            raise ValueError(f"Agent ID {a_id} can't get this mission.")
+            raise HTTPException(status_code=400, detail=f"Agent ID {a_id} can't get this mission.")
 
         _, count_rows = self.connection.connect_to_db(sql, values)
 
@@ -89,6 +93,10 @@ class MissionDB:
     def get_status_by_id(self, id: int) -> str:
         sql = "SELECT status FROM missions WHERE id = %s"
         values = (id, )
+
+        if not isinstance(id, int):
+            raise HTTPException(status_code=422, detail="Invalid ID.")
+
         data = self.connection.connect_to_db(sql, values)
         return data
 
@@ -103,14 +111,18 @@ class MissionDB:
             ):
             sql = "UPDATE missions SET status = %s WHERE id = %s"
             values = (status, id)
+
+            if not isinstance(id, int):
+                raise HTTPException(status_code=422, detail="Invalid ID.")
+
             _, count_rows = self.connection.connect_to_db(sql, values)
 
             if count_rows:
                 return {"message": f"Status of mission {id} updated successfully."}
             else:
-                return {"message": f"Failed to update mission {id} status."}
+                raise HTTPException(status_code=404, detail=f"Mission {id} not found.")
         else:
-            return {"message": "Illegal status update"}
+            raise HTTPException(status_code=400, detail="Illegal assignment.")
 
     def get_open_missions_by_agent(self, id: int) -> list[dict]:
         sql = "SELECT * FROM missions WHERE id = %s AND status = %s or status = %s"
@@ -120,7 +132,7 @@ class MissionDB:
 
     def count_all_missions(self) -> int:
         sql = "SELECT COUNT(*) FROM missions"
-        return self.connection.connect_to_db(sql)
+        return self.connection.fetch_one(sql)
 
     def count_by_status(self, status: str) -> int:
         sql = "SELECT COUNT(*) FROM missions WHERE status = %s"
@@ -128,18 +140,21 @@ class MissionDB:
         return self.connection.fetch_one(sql, values)
 
     def count_open_missions(self):
-        sql = "SELECT COUNT(*) FROM missions WHERE status in %s"
+        sql = "SELECT COUNT(*) FROM missions WHERE status IN (%s, %s, %s)"
         values = ("NEW", "ASSIGNED", "IN_PROGRESS")
         return self.connection.fetch_one(sql, values)
 
     def count_critical_missions(self):
         sql = "SELECT COUNT(*) FROM missions WHERE risk_level = %s"
-        values = "CRITICAL"
+        values = ("CRITICAL", )
         return self.connection.fetch_one(sql, values)
 
     def get_top_agent(self):
         sql = "SELECT * FROM agents ORDER BY completed_missions"
-        return self.connection.fetch_one(sql)
+        result = self.connection.fetch_one(sql)
+        if not result:
+            raise HTTPException(status_code=404, detail="Error top agent not found.")
+        return result
 
 
 mission = MissionDB()
