@@ -1,6 +1,7 @@
-from db_connection import connection
-from pydantic import BaseModel, Field
-from agent_db import agent
+from database import db_connection
+from pydantic import BaseModel, Field, ValidationError
+from database.agent_db import agent
+from fastapi import HTTPException
 
 class MissionCreate(BaseModel):
     title: str = Field(..., max_length=50)
@@ -8,10 +9,14 @@ class MissionCreate(BaseModel):
     location: str = Field(..., max_length=100)
     difficulty: int = Field(..., ge=1, le=10)
     importance: int = Field(..., ge=1, le=10)
-    risk_level: int = difficulty * 2 + importance
 
 
 class MissionDB:
+    def __init__(self):
+        self.connection = db_connection.DB_connection(
+            "127.0.0.1", "root", "1234", "Intelligence_db", 3306
+        )
+
     def get_risk_level(self, difficulty: int, importance: int) -> str:
         total = difficulty * 2 + importance
         if total <= 9:
@@ -26,27 +31,37 @@ class MissionDB:
         return result
 
     def create_mission(self, data: MissionCreate) -> dict:
-        sql = "INSERT INTO missions (title, description, location, difficulty, importance, risk_level) VALUES (%s, %s, %s, %s, %s, %s)"
-        values = (
-            data.title,
-            data.description,
-            data.location,
-            data.difficulty,
-            data.importance,
-            self.get_risk_level(data.difficulty, data.importance)
-        )
-        last_id, _ = connection.connect_to_db(sql, values)
-        return self.get_mission_by_id(last_id)
+        try:
+            sql = "INSERT INTO missions (title, description, location, difficulty, importance, risk_level) VALUES (%s, %s, %s, %s, %s, %s)"
+            values = (
+                data["title"],
+                data["description"],
+                data["location"],
+                data["difficulty"],
+                data["importance"],
+                self.get_risk_level(data["difficulty"], data["importance"])
+            )
+
+            last_id, _ = self.connection.connect_to_db(sql, values)
+            return self.get_mission_by_id(last_id)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Error: {e}")
+        except KeyError as e:
+            raise HTTPException(status_code=422, detail=f"Error: {e}")
 
     def get_all_missions(self) -> list[dict]:
         sql = "SELECT * FROM missions"
-        data = connection.fetch_all(sql)
+        data = self.connection.fetch_all(sql)
         return data
 
     def get_mission_by_id(self, id: int) -> list[dict]:
         sql = "SELECT * FROM missions WHERE id = %s"
         values = (id,)
-        data = connection.fetch_one(sql, values)
+        data = self.connection.fetch_one(sql, values)
+
+        if not data:
+            raise HTTPException(status_code=404, detail=f"Mission {id} not found.")
+        
         return data
 
     def assign_mission(self, m_id: int, a_id: int) -> dict:
@@ -64,7 +79,7 @@ class MissionDB:
         if mission_dict["risk_level"] == "CRITICAL" and agent_dict["agent_rank"] != "Commander":
             raise ValueError(f"Agent ID {a_id} can't get this mission.")
 
-        _, count_rows = connection.connect_to_db(sql, values)
+        _, count_rows = self.connection.connect_to_db(sql, values)
 
         if count_rows:
             return {"message": f"Mission {m_id} assigned to agent {a_id} successfully."}
@@ -74,7 +89,7 @@ class MissionDB:
     def get_status_by_id(self, id: int) -> str:
         sql = "SELECT status FROM missions WHERE id = %s"
         values = (id, )
-        data = connection.connect_to_db(sql, values)
+        data = self.connection.connect_to_db(sql, values)
         return data
 
     def update_mission_status(self, id: int, status: str) -> dict:
@@ -88,7 +103,7 @@ class MissionDB:
             ):
             sql = "UPDATE missions SET status = %s WHERE id = %s"
             values = (status, id)
-            _, count_rows = connection.connect_to_db(sql, values)
+            _, count_rows = self.connection.connect_to_db(sql, values)
 
             if count_rows:
                 return {"message": f"Status of mission {id} updated successfully."}
@@ -100,28 +115,31 @@ class MissionDB:
     def get_open_missions_by_agent(self, id: int) -> list[dict]:
         sql = "SELECT * FROM missions WHERE id = %s AND status = %s or status = %s"
         values = (id, "ASSIGNED", "IN_PROGRESS")
-        data = connection.fetch_all(sql, values)
+        data = self.connection.fetch_all(sql, values)
         return data
 
     def count_all_missions(self) -> int:
         sql = "SELECT COUNT(*) FROM missions"
-        return connection.connect_to_db(sql)
+        return self.connection.connect_to_db(sql)
 
     def count_by_status(self, status: str) -> int:
         sql = "SELECT COUNT(*) FROM missions WHERE status = %s"
         values = (status, )
-        return connection.fetch_one(sql, values)
+        return self.connection.fetch_one(sql, values)
 
-    def count_open_missions():
+    def count_open_missions(self):
         sql = "SELECT COUNT(*) FROM missions WHERE status in %s"
         values = ("NEW", "ASSIGNED", "IN_PROGRESS")
-        return connection.fetch_one(sql, values)
+        return self.connection.fetch_one(sql, values)
 
-    def count_critical_missions():
+    def count_critical_missions(self):
         sql = "SELECT COUNT(*) FROM missions WHERE risk_level = %s"
         values = "CRITICAL"
-        return connection.fetch_one(sql, values)
+        return self.connection.fetch_one(sql, values)
 
-    def get_top_agent():
+    def get_top_agent(self):
         sql = "SELECT * FROM agents ORDER BY completed_missions"
-        return connection.fetch_one(sql)
+        return self.connection.fetch_one(sql)
+
+
+mission = MissionDB()

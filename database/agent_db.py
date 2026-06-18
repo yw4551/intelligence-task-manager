@@ -1,6 +1,7 @@
-from db_connection import connection
-from pydantic import BaseModel, Field
+from database import db_connection
+from pydantic import BaseModel, Field, ValidationError
 from typing import Literal
+from fastapi import HTTPException
 
 
 class CreateAgent(BaseModel):
@@ -10,47 +11,73 @@ class CreateAgent(BaseModel):
 
 
 class AgentDB:
+    def __init__(self):
+        self.connection = db_connection.DB_connection(
+            "127.0.0.1", "root", "1234", "Intelligence_db", 3306
+        )
+
     def create_agent(self, data: CreateAgent):
-        sql = "INSERT INTO agents (name, specialty, agent_rank) VALUES (%s, %s, %s, %s)"
-        values = (data.name, data.specialty, data.agent_rank)
-        last_id, _ = connection.connect_to_db(sql, values)
-        return self.get_agent_by_id(last_id)
+        try:
+            sql = "INSERT INTO agents (name, specialty, agent_rank) VALUES (%s, %s, %s, %s)"
+            values = (data["name"], data["specialty"], data["agent_rank"])
+            last_id, _ = self.connection.connect_to_db(sql, values)
+            return self.get_agent_by_id(last_id)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Error: {e}")
 
     def get_all_agents(self) -> list[dict]:
         sql = "SELECT * FROM agents"
-        data = connection.fetch_all(sql)
+        data = self.connection.fetch_all(sql)
+        if not data:
+            return []
+
         return data
 
     def get_agent_by_id(self, id: int) -> list[dict]:
         sql = "SELECT * FROM agents WHERE id = %s"
         values = (id, )
-        data = connection.fetch_one(sql, values)
+
+        if not isinstance(id, int):
+            raise HTTPException(status_code=422, detail="Invalid ID.")
+
+        data = self.connection.fetch_one(sql, values)
+
+        if not data:
+            raise HTTPException(status_code=404, detail=f"Agent ID {id} not found.")
         return data
 
     def update_agent(self, id: int, data: CreateAgent) -> dict:
         sql = "UPDATE agents SET name = %s, specialty = %s, agent_rank = %s WHERE id = %s"
         values = (data.name, data.specialty, data.agent_rank, id)
-        _, count_rows = connection.connect_to_db(sql, values)
+
+        if not isinstance(id, int):
+            raise HTTPException(status_code=422, detail="Invalid ID.")
+
+        _, count_rows = self.connection.connect_to_db(sql, values)
 
         if count_rows:
             return {"message": f"Agent {id} updated successfully."}
         else:
-            return {"message": f"Failed updating agent {id}."}
+            raise HTTPException(status_code=404, detail=f"Agent ID {id} not found.")
 
     def deactivate_agent(self, id: int) -> dict:
         sql = "UPDATE agents SET is_active = False WHERE id = %s"
         values = (id, )
-        count_rows = connection.connect_to_db(sql, values)
+
+        if not isinstance(id, int):
+            raise HTTPException(status_code=422, detail="Invalid ID.")
+
+        _, count_rows = self.connection.connect_to_db(sql, values)
 
         if count_rows:
             return {"message": f"Agent {id} deactivate successfully."}
         else:
-            return {"message": f"Failed deactivating agent {id}."}
+            raise HTTPException(status_code=404, detail=f"Agent ID {id} not found.")
 
     def increment_completed(self, id: int) -> dict:
         sql = "UPDATE agents SET completed_missions = completed_missions + 1 WHERE id = %s"
         values = (id, )
-        count_rows = connection.connect_to_db(sql, values)
+        _, count_rows = self.connection.connect_to_db(sql, values)
 
         if count_rows:
             return {"message": f"Agent {id} completed a mission successfully."}
@@ -60,7 +87,7 @@ class AgentDB:
     def increment_failed(self, id: int) -> dict:
         sql = "UPDATE agents SET failed_missions = failed_missions + 1 WHERE id = %s"
         values = (id, )
-        count_rows = connection.connect_to_db(sql, values)
+        _, count_rows = self.connection.connect_to_db(sql, values)
 
         if count_rows:
             return {"message": f"Agent {id} failed a mission."}
@@ -70,19 +97,28 @@ class AgentDB:
     def get_agent_performance(self, id: int) -> dict:
         sql = "SELECT completed_missions, failed_missions FROM agents WHERE id = %s"
         values = (id, )
-        data = connection.fetch_one(sql, values)
+
+        if not isinstance(id, int):
+            raise HTTPException(status_code=422, detail="Invalid ID.")
+
+        data = self.connection.fetch_one(sql, values)
+
+        if not data:
+            raise HTTPException(status_code=404, detail=f"Agent ID {id} not found.")
+
         return {
             "Completed": data["completed_missions"],
-            "failed": data["failed"],
-            "total": data["completed_missions"] + data["failed"],
-            "success_rate": (data["completed_missions"] / data["failed"]) * 100
+            "failed": data["failed_missions"],
+            "total": data["completed_missions"] + data["failed_missions"],
+            "success_rate": (data["failed_missions"] / data["completed_missions"])
+            * 100,
         }
-    
+
     def count_active_agents(self):
         sql = "SELECT * FROM agents WHERE is_active = %s"
         values = (True, )
-        data = connection.fetch_all(sql, values)
+        data = self.connection.fetch_all(sql, values)
         return data
-    
+
 
 agent = AgentDB()

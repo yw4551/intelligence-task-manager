@@ -1,4 +1,5 @@
 import mysql.connector
+from mysql.connector import Error
 
 
 class DB_connection:
@@ -20,9 +21,6 @@ class DB_connection:
             port = self.port
         )
 
-    def start_cursor(self):
-        return self.conn.cursor(dictionary=True)
-
     def create_database(self):
         conn = mysql.connector.Connect(
             host = self.host,
@@ -35,7 +33,8 @@ class DB_connection:
         cursor.close()
 
     def create_tables(self):
-        cursor = self.start_cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor(dictionary=True)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS agents(
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -44,7 +43,7 @@ class DB_connection:
                 is_active BOOLEAN DEFAULT TRUE,
                 completed_missions INT DEFAULT 0,
                 failed_missions INT DEFAULT 0,
-                agent_rank ENUM("Junior", "Senior", "Commander")
+                agent_rank ENUM("Junior", "Senior", "Commander") NOT NULL
             )
         """)
         cursor.execute("""
@@ -53,44 +52,47 @@ class DB_connection:
                 title VARCHAR(50) NOT NULL,
                 description TEXT NOT NULL,
                 location VARCHAR(100) NOT NULL,
-                difficulty INT NOT NULL CHECK(BETWEEN 1 AND 10),
-                importance INT NOT NULL CHECK(BETWEEN 1 AND 10),
+                difficulty INT NOT NULL CHECK(difficulty >= 1 AND difficulty <= 10),
+                importance INT NOT NULL CHECK(importance >= 1 AND importance <= 10),
                 status ENUM("NEW", "IN_PROGRESS", "COMPLETED", "FAILED", "CANCELLED") DEFAULT "NEW",
                 risk_level ENUM("LOW", "MEDIUM", "HIGH", "CRITICAL"),
                 assigned_agent_id INT DEFAULT NULL
             )
         """)
-        self.conn.commit()
+        conn.commit()
         cursor.close()
 
     def connect_to_db(self, sql: str, values: tuple = None) -> bool:
-        cursor = self.conn.cursor(dictionary=True)
+        conn = self.get_connection()
+        cursor = conn.cursor(dictionary=True)
         cursor.execute(sql, values)
-        self.conn.commit()
+        conn.commit()
         last_id = cursor.lastrowid
         count_rows = cursor.rowcount > 0
         cursor.close()
-        self.conn.close()
+        conn.close()
         return last_id, count_rows
 
     def fetch_all(self, sql: str, values: tuple = None) -> list[dict]:
-        cursor = self.start_cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor(dictionary=True)
         cursor.execute(sql, values)
         data = cursor.fetchall()
         cursor.close()
-        self.conn.close()
+        conn.close()
         return data
 
     def fetch_one(self, sql: str, values: tuple = None) -> list[dict]:
-        cursor = self.start_cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor(dictionary=True)
         cursor.execute(sql, values)
         data = cursor.fetchone()
         cursor.close()
-        self.conn.close()
+        conn.close()
         return data
 
 
 try:
     connection = DB_connection("127.0.0.1", "root", "1234", "Intelligence_db", 3306)
-except mysql.connector.errors as e:
+except Error as e:
     print(f"Error: {e}")
