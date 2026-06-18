@@ -1,14 +1,13 @@
 from db_connection import connection
 from pydantic import BaseModel, Field
-from typing import Literal
-
+from agent_db import agent
 
 class MissionCreate(BaseModel):
     title: str = Field(..., max_length=50)
     description: str = Field(...)
     location: str = Field(..., max_length=100)
-    difficulty: int = Field(ge=1, le=10)
-    importance: int = Field(ge=1, le=10)
+    difficulty: int = Field(..., ge=1, le=10)
+    importance: int = Field(..., ge=1, le=10)
     risk_level: int = difficulty * 2 + importance
 
 
@@ -26,8 +25,8 @@ class MissionDB:
 
         return result
 
-    def create_mission(self, data: dict) -> dict:
-        sql = "INSERT INTO agents (title, description, location, difficulty, importance, risk_level) VALUES (%s, %s, %s, %s, %s, %s)"
+    def create_mission(self, data: MissionCreate) -> dict:
+        sql = "INSERT INTO missions (title, description, location, difficulty, importance, risk_level) VALUES (%s, %s, %s, %s, %s, %s)"
         values = (
             data.title,
             data.description,
@@ -53,6 +52,18 @@ class MissionDB:
     def assign_mission(self, m_id: int, a_id: int) -> dict:
         sql = "UPDATE missions SET assigned_agent_id = %s WHERE id = %s"
         values = (a_id, m_id)
+
+        agent_dict = agent.get_agent_by_id(a_id)
+        if not agent_dict["is_active"]:
+            raise ValueError(f"Agent ID {a_id} is not active.")
+
+        if self.get_open_missions_by_agent(a_id) == 3:
+            raise ValueError(f"Agent ID {a_id} has too many missions.")
+
+        mission_dict = self.get_mission_by_id(m_id)
+        if mission_dict["risk_level"] == "CRITICAL" and agent_dict["agent_rank"] != "Commander":
+            raise ValueError(f"Agent ID {a_id} can't get this mission.")
+
         _, count_rows = connection.connect_to_db(sql, values)
 
         if count_rows:
@@ -72,11 +83,9 @@ class MissionDB:
         if (
             (actual_status == "NEW" and status == "ASSIGNED")
             or (actual_status == "ASSIGNED" and status == "IN_PROGRESS")
-            or (
-                actual_status == "IN_PROGRESS"
-                and status in ["COMPLETED", "FAILED", "CANCELLED"]
-            )
-        ):
+            or (actual_status == "IN_PROGRESS" and status in ["COMPLETED", "FAILED", "CANCELLED"])
+            or (actual_status in ["NEW", "ASSIGNED"] and status == "CANCELLED")
+            ):
             sql = "UPDATE missions SET status = %s WHERE id = %s"
             values = (status, id)
             _, count_rows = connection.connect_to_db(sql, values)
@@ -88,23 +97,31 @@ class MissionDB:
         else:
             return {"message": "Illegal status update"}
 
-    def get_open_missions_by_agent(id):
+    def get_open_missions_by_agent(self, id: int) -> list[dict]:
         sql = "SELECT * FROM missions WHERE id = %s AND status = %s or status = %s"
         values = (id, "ASSIGNED", "IN_PROGRESS")
         data = connection.fetch_all(sql, values)
         return data
 
-    def count_all_missions():
-        pass
+    def count_all_missions(self) -> int:
+        sql = "SELECT COUNT(*) FROM missions"
+        return connection.connect_to_db(sql)
 
-    def count_by_status(status):
-        pass
+    def count_by_status(self, status: str) -> int:
+        sql = "SELECT COUNT(*) FROM missions WHERE status = %s"
+        values = (status, )
+        return connection.fetch_one(sql, values)
 
     def count_open_missions():
-        pass
+        sql = "SELECT COUNT(*) FROM missions WHERE status in %s"
+        values = ("NEW", "ASSIGNED", "IN_PROGRESS")
+        return connection.fetch_one(sql, values)
 
     def count_critical_missions():
-        pass
+        sql = "SELECT COUNT(*) FROM missions WHERE risk_level = %s"
+        values = "CRITICAL"
+        return connection.fetch_one(sql, values)
 
     def get_top_agent():
-        pass
+        sql = "SELECT * FROM agents ORDER BY completed_missions"
+        return connection.fetch_one(sql)

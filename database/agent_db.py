@@ -83,3 +83,6 @@ class AgentDB:
         values = (True, )
         data = connection.fetch_all(sql, values)
         return data
+    
+
+agent = AgentDB()
