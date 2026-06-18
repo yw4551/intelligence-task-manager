@@ -8,7 +8,6 @@ class DB_connection:
         self.password = password
         self.database = database
         self.port = port
-        self.conn = self.get_connection()
         self.create_database()
         self.create_tables()
 
@@ -17,14 +16,20 @@ class DB_connection:
             host = self.host,
             user = self.user,
             password = self.password,
+            database = self.database,
             port = self.port
         )
 
     def start_cursor(self):
-        return self.conn.cursor()
+        return self.conn.cursor(dictionary=True)
 
     def create_database(self):
-        cursor = self.start_cursor()
+        conn = mysql.connector.Connect(
+            host = self.host,
+            user = self.user,
+            password = self.password
+        )
+        cursor = conn.cursor()
         cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
         cursor.execute(f"USE {self.database}")
         cursor.close()
@@ -48,8 +53,8 @@ class DB_connection:
                 title VARCHAR(50) NOT NULL,
                 description TEXT NOT NULL,
                 location VARCHAR(100) NOT NULL,
-                difficulty INT NOT NULL CHECK(difficulty >= 1) CHECK(difficulty <= 10),
-                importance INT NOT NULL CHECK(importance >= 1) CHECK(importance <= 10),
+                difficulty INT NOT NULL CHECK(BETWEEN 1 AND 10),
+                importance INT NOT NULL CHECK(BETWEEN 1 AND 10),
                 status ENUM("NEW", "IN_PROGRESS", "COMPLETED", "FAILED", "CANCELLED") DEFAULT "NEW",
                 risk_level ENUM("LOW", "MEDIUM", "HIGH", "CRITICAL"),
                 assigned_agent_id INT DEFAULT NULL
@@ -57,10 +62,9 @@ class DB_connection:
         """)
         self.conn.commit()
         cursor.close()
-        self.conn.close()
 
     def connect_to_db(self, sql: str, values: tuple = None) -> bool:
-        cursor = self.conn.cursor()
+        cursor = self.conn.cursor(dictionary=True)
         cursor.execute(sql, values)
         self.conn.commit()
         last_id = cursor.lastrowid
@@ -73,20 +77,16 @@ class DB_connection:
         cursor = self.start_cursor()
         cursor.execute(sql, values)
         data = cursor.fetchall()
-
-        if not data:
-            return []
-
+        cursor.close()
+        self.conn.close()
         return data
 
     def fetch_one(self, sql: str, values: tuple = None) -> list[dict]:
         cursor = self.start_cursor()
         cursor.execute(sql, values)
         data = cursor.fetchone()
-
-        if not data:
-            return []
-
+        cursor.close()
+        self.conn.close()
         return data
 
 
